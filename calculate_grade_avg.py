@@ -1,9 +1,9 @@
-import json
+import os
 import pandas as pd
 from collections import defaultdict
 import logging
 from openpyxl import load_workbook
-from openpyxl.styles import PatternFill
+# from openpyxl.styles import PatternFill
 
 
 def calculate_grade_cut(file_composite, file_strings, subblock):
@@ -60,16 +60,26 @@ def calculate_grade_cut(file_composite, file_strings, subblock):
 
     def notification_to_close_file(df, name_file, index=False):
         logging.debug(f" === Создание файла Excel: {name_file}.xlsx === ")
-        try:
-            df.to_excel(f"{name_file}.xlsx", index=index)
-            logging.debug(f" === Файл Excel {name_file}.xlsx --> Создан. === ")
-        except PermissionError:
-            logging.error(f" === Не удалось создать файл Excel, необходимо закрыть файл: {name_file}.xlsx === ")
 
-    pd.set_option('display.max_rows', None)
-    pd.set_option('display.max_columns', None)
-    pd.set_option('display.width', None)
-    pd.set_option('display.max_colwidth', None)
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        folder_path = os.path.join(base_dir, "files")
+        os.makedirs(folder_path, exist_ok=True)
+
+        if not name_file.lower().endswith(".xlsx"):
+            name_file += ".xlsx"
+
+        file_path = os.path.join(folder_path, name_file)
+
+        try:
+            df.to_excel(file_path, index=index)
+            logging.debug(f" === Файл Excel {name_file} --> Создан. === ")
+        except PermissionError:
+            logging.error(f" === Не удалось создать файл Excel. Закройте файл: {name_file} и попробуйте снова. === ")
+
+        pd.set_option('display.max_rows', None)
+        pd.set_option('display.max_columns', None)
+        pd.set_option('display.width', None)
+        pd.set_option('display.max_colwidth', None)
 
 
     # DATA_NAME_FILE_ASSAY = "data_assay.json" # Файл данных о скважинах|композиты|опробование
@@ -559,6 +569,8 @@ def calculate_grade_cut(file_composite, file_strings, subblock):
                 logging.error(f"Скважина {hole_cut}: субблок {block_cut} не найден в sum_metrogram_and_sample")
     logging.info(f"Урезка ураганнов закончена!")
 
+    # Объединяем данные из блоков <=7 и >7 скважин
+    final_df = pd.concat([small_blocks_rows, big_blocks_rows], ignore_index=True)
 
     notification_to_close_file(small_blocks_rows, "1) урезка_меньше_7", True)
     notification_to_close_file(df_nearby, "2) ближайшие_скважины", False)
@@ -566,18 +578,18 @@ def calculate_grade_cut(file_composite, file_strings, subblock):
     notification_to_close_file(sum_metrogram_and_sample, "4) сумма_метрограмма_и_длин", False)
     notification_to_close_file(big_blocks_rows, "5) урезка_больше_7", True)
     notification_to_close_file(df_average_au, "6) средние_по_субблокам", False)
+    notification_to_close_file(final_df, "7) объединённые_результаты", False)
 
 
-    # Объединяем данные из блоков <=7 и >7 скважин
-    final_df = pd.concat([small_blocks_rows, big_blocks_rows], ignore_index=True)
 
+    
     # Сохраняем в Excel
-    output_filename = "7) объединённые_результаты.xlsx"
-    try:
-        final_df.to_excel(output_filename, index=False)
-        final_df.to_json("объединённые_результаты.json", index=False)
-        logging.info(f"Итоговый объединённый файл сохранён: {output_filename}")
-    except PermissionError:
-        logging.error(f"Файл {output_filename} открыт. Закрой его перед сохранением.")
+    # output_filename = "7) объединённые_результаты.xlsx"
+    # try:
+    #     final_df.to_excel(output_filename, index=False)
+    #     final_df.to_json("объединённые_результаты.json", index=False)
+    #     logging.info(f"Итоговый объединённый файл сохранён: {output_filename}")
+    # except PermissionError:
+    #     logging.error(f"Файл {output_filename} открыт. Закрой его перед сохранением.")
 
 

@@ -1,9 +1,9 @@
 import pandas as pd
 from PyQt5 import QtWidgets
 from PyQt5.QtCore import QSettings
-from GUI import Ui_Dialog
+from GUI.GUI import Ui_Dialog
 import traceback
-from calculate_grade_avg_xlxs import calculate_grade_cut
+from calculate_grade_avg import calculate_grade_cut
 
 
 class MyApp(QtWidgets.QMainWindow):
