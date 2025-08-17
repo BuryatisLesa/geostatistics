@@ -11,7 +11,7 @@ class MyApp(QtWidgets.QMainWindow):
         super().__init__()
         self.ui = Ui_Dialog()
         self.ui.setupUi(self)
-
+ 
         # Настройки
         self.settings = QSettings("MyCompany", "MyAppName")
 
