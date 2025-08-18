@@ -8,7 +8,7 @@ from collections import defaultdict
 def cutGrade(pathFileAssay, pathFileStrings, EXPLORATION_BLOCK):
 
     logging.basicConfig(
-        level=logging.DEBUG,
+        level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(message)s",
         handlers=[logging.StreamHandler()]
     )
@@ -234,12 +234,206 @@ def cutGrade(pathFileAssay, pathFileStrings, EXPLORATION_BLOCK):
 
     # Вычисление метрограмма для выборке
     filtredFileAssay["Метрограмм"] = filtredFileAssay["Длина"] * filtredFileAssay["Au, г/т"]
-    exportFileXlsx(filtredFileAssay, "Выборка_проб", index=False)
+
 
     # Номера проб
+    filtredFileAssay["номер пробы"] = filtredFileAssay.groupby("Субблок").cumcount() + 1
+    filtredFileAssay["Разбивка по 30"] = ((filtredFileAssay["номер пробы"] - 1) // 30) + 1
 
-    print(filtredFileAssay.groupby("Субблок")["ЧАСТОТА"])
+    # Расчёт суммы метрограмма и длин проб на каждую 30-ку
+    sumForAllThirty = filtredFileAssay.copy()
+    sumForAllThirty["счёт"] = (
+        sumForAllThirty.groupby(["Субблок", "Разбивка по 30"])["Разбивка по 30"]
+        .transform("count")
+    )
+    sumForAllThirty["Длина"] = pd.to_numeric(sumForAllThirty["Длина"], errors="coerce")
+    sumForAllThirty["Метрограмм"] = pd.to_numeric(sumForAllThirty["Метрограмм"], errors="coerce")
 
+    sumForAllThirty["Метрограмм"] = (
+        sumForAllThirty.groupby(["Субблок", "Разбивка по 30"])["Метрограмм"]
+        .transform("sum")
+    )
+    sumForAllThirty["Длина"] = (
+        sumForAllThirty.groupby(["Субблок", "Разбивка по 30"])["Длина"]
+        .transform("sum")
+    )
+    sumForAllThirty = sumForAllThirty.drop_duplicates(subset=["Субблок", "Разбивка по 30"])
+
+    sumForAllThirty["Ураган"] = (
+        sumForAllThirty.groupby(["Субблок", "Разбивка по 30"])["Метрограмм"]
+        .transform("sum") * 0.1
+    )
+
+    sumForAllThirty["Суммарная длина"] = (
+        sumForAllThirty.groupby(["Субблок", "Разбивка по 30"])["Длина"]
+        .transform("sum")
+    )
+    exportFileXlsx(sumForAllThirty, "18)Суммы по 30-кам", index=False)
+
+    # Объединяем DataFrame по колонкам "Субблок" и "Разбивка по 30"
+
+    colsToAdd = ["Суммарная длина", "Ураган"]
+    filtredFileAssay = filtredFileAssay.drop(columns=colsToAdd, errors="ignore")  # удаляем старые
+    filtredFileAssay = filtredFileAssay.merge(
+        sumForAllThirty[["Субблок", "Разбивка по 30"] + colsToAdd],
+        on=["Субблок", "Разбивка по 30"],
+        how="left"
+    )
+
+    # Маркировка урагана
+    for index, row in filtredFileAssay.iterrows():
+        metrogram = row["Метрограмм"]
+        tallGradeAu = row["Ураган"]
+        gradeAu = row["Au, г/т"]
+
+        if metrogram > tallGradeAu and gradeAu >= 1:
+            filtredFileAssay.loc[index, "Метка урагана"] = 1
+        elif metrogram > tallGradeAu and gradeAu < 1:
+            filtredFileAssay.loc[index, "Метка урагана"] = 2
+        else:
+            filtredFileAssay.loc[index, "Метка урагана"] = 3
+
+
+    MASK_HORIZONT = fileAssay["Горизонт"] == EXPLORATION_BLOCK.split("_")[0]
+    # понижаем в файле композитов по горизонту содержание
+    fileAssay.loc[MASK_HORIZONT, "AU 2.5"] = fileAssay.loc[MASK_HORIZONT, "Au, г/т"].clip(upper=2.5)
+
+    radiusFind = 11
+
+    logging.info(f"Радиус поиска: {radiusFind} метров.")
+
+    holeCoords = {
+    row["Скважина"]: (float(row["X"]), float(row["Y"]))
+    for _, row in filtredFileAssay.iterrows()
+    }
+    nearby_sorted = {}
+    # Для каждой строки из filtered_metrogram — ищем ближайшие скважины из всего набора
+    for _, row in fileAssay.iterrows():
+        currentHole = row["Скважина"]
+        horizont = row["Горизонт"]
+        x0 = float(row["X"])
+        y0 = float(row["Y"])
+
+        # Находим ближайшие, исключая саму скважину
+        if int(horizont) == int(EXPLORATION_BLOCK.split("_")[0]):
+            nearby = []
+            for other_hole, (x, y) in holeCoords.items():
+                if other_hole == currentHole:
+                    continue
+                dx = x0 - x
+                dy = y0 - y
+                distance = (dx**2 + dy**2)**0.5
+                if distance <= radiusFind:
+                    nearby.append(other_hole)
+
+            # Сортируем по расстоянию
+            nearby_sorted[currentHole] = nearby[:4]
+
+            rowsNearby = []
+            for main_hole, neighbors in nearby_sorted.items():
+                for idx, neighbor in enumerate(neighbors, start=1):
+                    rowsNearby.append({
+                        "Скважина": main_hole,
+                        "Ближайшая_скважина": neighbor,
+                        "Номер_по_порядку": idx
+                    })
+
+            dfNearby = pd.DataFrame(rowsNearby)
+
+            near_hole_dict = defaultdict(list)
+            for i, row in dfNearby.iterrows():
+                hole = row["Скважина"]
+                near_hole = row["Ближайшая_скважина"]
+                if len(near_hole) >= 2:
+                    near_hole_dict[hole].append(near_hole)
+                else:
+                    continue
+
+            for hole, near_holes in near_hole_dict.items():
+                logging.debug(f"Скважина = {hole} => ближайшие 4-е скважины: {near_holes}")
+
+    logging.info(f"Поиск скважин закончен!")
+
+    for numberHole, nearbyNumberHole in near_hole_dict.items():
+        # ищем строку по ключевой скважине
+        mask = filtredFileAssay["Скважина"] == numberHole
+
+        if not mask.any():
+            logging.warning(f"Скважина {numberHole} не найдена в DataFrame. Пропускаем.")
+            continue
+
+        # проверяем метку урагана
+        mark_value = filtredFileAssay.loc[mask, "Метка урагана"].values[0]
+        if mark_value == 1:
+            nearbyGradeAuvalues = fileAssay.loc[
+                fileAssay["Скважина"].isin(nearbyNumberHole), "Au, г/т"
+            ]
+            if not nearbyGradeAuvalues.empty:
+                avg_value = nearbyGradeAuvalues.mean()
+                filtredFileAssay.loc[mask, "AU_4скв"] = avg_value
+                logging.debug(
+                    f"Скважина {numberHole}: записано среднее содержание золота "
+                    f"по {len(nearbyGradeAuvalues)} соседям = {avg_value:.3f}"
+                )
+            else:
+                logging.debug(f"Скважина {numberHole}: у соседей нет данных по золоту")
+
+    # создаём столбец "Метрограмм_CUT", копируем значения из "Метрограмм"
+    filtredFileAssay["Метрограмм_CUT"] = filtredFileAssay["Метрограмм"]
+
+    # где "Метка урагана" == 2, переписываем значениями из "Ураган"
+    filtredFileAssay.loc[filtredFileAssay["Метка урагана"] == 2, "Метрограмм_CUT"] = \
+        filtredFileAssay.loc[filtredFileAssay["Метка урагана"] == 2, "Ураган"]
+    
+    filtredFileAssay.loc[filtredFileAssay["Метка урагана"] == 1, "Метрограмм_CUT"] = \
+        filtredFileAssay.loc[filtredFileAssay["Метка урагана"] == 1, "AU_4скв"] \
+              * filtredFileAssay.loc[filtredFileAssay["Метка урагана"] == 1, "Длина"]
+    
+
+    # Расчёт суммы метрограмма_cut для субблоков
+    sumForAllThirty = (
+        filtredFileAssay.groupby("Субблок", as_index=False)
+        .agg({
+            "Метрограмм_CUT": "sum",
+            "Длина": "sum"
+        })
+    )
+    sumForAllThirty = sumForAllThirty.drop_duplicates(subset=["Субблок"])
+
+    sumForAllThirty["AU_Ураган"] = (
+        sumForAllThirty["Метрограмм_CUT"] / sumForAllThirty["Длина"]
+    )
+
+    # создаём словарь субблок -> AU_Ураган
+    au_dict = dict(zip(sumForAllThirty["Субблок"], sumForAllThirty["AU_Ураган"]))
+
+    au_series = filtredFileAssay["Субблок"].map(au_dict)
+
+    # обновляем только там, где AU_CUT пустой (NaN)
+    filtredFileAssay["AU_CUT"] = filtredFileAssay["AU_CUT"].fillna(au_series)
+    
+    exportFileXlsx(sumForAllThirty, "19)Сумма_метрограмма_CUT", index=False)
+    exportFileXlsx(filtredFileAssay, "Выборка_проб", index=False)
+    fileAssay.set_index("№ пробы полевой", inplace=True)
+    filtredFileAssay.set_index("№ пробы полевой", inplace=True)
+
+    # обновляем только пересечения по индексу и только указанные столбцы
+    fileAssay.update(filtredFileAssay[["Метрограмм", "Ураган", "Суммарная длина", "AU_CUT"]])
+
+    fileAssay.reset_index(inplace=True)
+    exportFileXlsx(fileAssay, "20)Композиты_СЭР_5м", index=False)
+
+    # создаём словарь Субблок -> AU_Ураган
+    au_dict = sumForAllThirty.set_index("Субблок")["AU_Ураган"].to_dict()
+
+    # обновляем файл контуров по Субблоку
+    fileStrings["AU_CUT"] = fileStrings["Субблок"].map(au_dict)
+
+
+    exportFileXlsx(fileStrings, f"21){EXPLORATION_BLOCK}_strings", index=False)
+
+
+    
 
 
 
