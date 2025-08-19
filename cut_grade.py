@@ -12,26 +12,34 @@ def cutGrade(pathFileAssay, pathFileStrings, EXPLORATION_BLOCK):
         format="%(asctime)s [%(levelname)s] %(message)s",
         handlers=[logging.StreamHandler()]
     )
-    def exportFileXlsx(df, name_file, index=False):
+    def exportFileXlsx(df, name_file, index=False, subfolder=EXPLORATION_BLOCK):
         logging.debug(f" === Создание файла Excel: {name_file}.xlsx === ")
 
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        folder_path = os.path.join(base_dir, "Scripts_files")
+        base_dir = os.path.dirname(os.path.abspath(__file__))  
+
+        # Общая папка Scripts_files
+        scripts_dir = os.path.join(base_dir, "Scripts_files")
+        os.makedirs(scripts_dir, exist_ok=True)
+
+        # Подпапка внутри Scripts_files
+        folder_path = os.path.join(scripts_dir, subfolder)
         os.makedirs(folder_path, exist_ok=True)
 
+        # Добавляем расширение, если нет
         if not name_file.lower().endswith(".xlsx"):
             name_file += ".xlsx"
 
         file_path = os.path.join(folder_path, name_file)
 
         try:
-            df.to_excel(file_path, index=index)
+            df.to_excel(file_path, index=index, engine="openpyxl")
             logging.debug(f" === Файл Excel {name_file} --> Создан. === ")
         except PermissionError:
             logging.error(f" === Не удалось создать файл Excel. Закройте файл: {name_file} и попробуйте снова. === ")
 
-    fileAssay = pd.read_excel(pathFileAssay)
-    fileStrings = pd.read_excel(pathFileStrings)
+
+    fileAssay = pathFileAssay
+    fileStrings = pathFileStrings
 
     # 2.1 == Создание номера и запись субблока: ==
     try:
@@ -431,18 +439,3 @@ def cutGrade(pathFileAssay, pathFileStrings, EXPLORATION_BLOCK):
 
 
     exportFileXlsx(fileStrings, f"21){EXPLORATION_BLOCK}_strings", index=False)
-
-
-    
-
-
-
-
-
-
-
-
-
-
-
-cutGrade(r"data\Композиты_CЭР_5м.XLSX", r"data\950_6.5-10.XLSX", EXPLORATION_BLOCK="950_6.5-10")

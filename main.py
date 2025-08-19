@@ -3,7 +3,7 @@ from PyQt5 import QtWidgets
 from PyQt5.QtCore import QSettings
 from GUI.GUI import Ui_Dialog
 import traceback
-from calculate_grade_avg import calculate_grade_cut
+from cut_grade import cutGrade
 
 
 class MyApp(QtWidgets.QMainWindow):
@@ -63,7 +63,7 @@ class MyApp(QtWidgets.QMainWindow):
             subblock = self.ui.lineEdit_3.text()
             self.settings.setValue("subblock", subblock)
 
-            calculate_grade_cut(file_composite=df1, file_strings=df2, subblock=subblock)
+            cutGrade(pathFileAssay=df1, pathFileStrings=df2, EXPLORATION_BLOCK=subblock)
 
             QtWidgets.QMessageBox.information(self, "Успешно", "Скрипт выполнен успешно.")
         except Exception as e:
