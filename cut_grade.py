@@ -4,6 +4,7 @@ import logging
 import os
 from geostatistics.strings import Strings
 from collections import defaultdict
+import sys
 
 def cutGrade(pathFileAssay, pathFileStrings, EXPLORATION_BLOCK):
 
@@ -12,10 +13,19 @@ def cutGrade(pathFileAssay, pathFileStrings, EXPLORATION_BLOCK):
         format="%(asctime)s [%(levelname)s] %(message)s",
         handlers=[logging.StreamHandler()]
     )
+    def get_base_dir():
+        """Определяет базовую директорию для сохранения файлов."""
+        if getattr(sys, 'frozen', False):  
+            # если запущено как .exe
+            return os.path.dirname(sys.executable)
+        else:
+            # если запущено как .py
+            return os.path.dirname(os.path.abspath(__file__))
+
     def exportFileXlsx(df, name_file, index=False, subfolder=EXPLORATION_BLOCK):
         logging.debug(f" === Создание файла Excel: {name_file}.xlsx === ")
 
-        base_dir = os.path.dirname(os.path.abspath(__file__))  
+        base_dir = get_base_dir()
 
         # Общая папка Scripts_files
         scripts_dir = os.path.join(base_dir, "Scripts_files")
@@ -36,6 +46,8 @@ def cutGrade(pathFileAssay, pathFileStrings, EXPLORATION_BLOCK):
             logging.debug(f" === Файл Excel {name_file} --> Создан. === ")
         except PermissionError:
             logging.error(f" === Не удалось создать файл Excel. Закройте файл: {name_file} и попробуйте снова. === ")
+
+        return file_path
 
 
     fileAssay = pathFileAssay
